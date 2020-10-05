@@ -7,6 +7,8 @@ using System.Data.SqlClient;
 using System.IO;
 using System.Linq;
 using System.Net;
+using System.Security.Cryptography.X509Certificates;
+using System.Text;
 using System.Threading;
 using Telegram.Bot;
 using Telegram.Bot.Args;
@@ -16,25 +18,30 @@ namespace TeleBot
 {
     class Program
     {
-        static Repository repository = new Repository();
-        static string message;
-        static TelegramBotClient client;
-        static List<string> currencies = new List<string>() { "USD", "EUR" };
-        public static object JavaScriptSerializer { get; private set; }
+        static DateTime updateTime = DateTime.Now;
+        static List<long> IDs = new List<long>();
 
+        static TelegramBotClient client;
         static void Main(string[] args)
         {
+
+            Thread.Sleep(1000);
+
             client = new TelegramBotClient("1366636939:AAHAHK8wb_E2fRfzvqbs2JkGvJ2rbsdy63g");
             client.OnMessage += getMsg;
             client.StartReceiving();
+
+
+
+            Timer tt = new System.Threading.Timer(TickFunc, null, 0, 10000);
+
             Console.Read();
         }
-        private static void getMoney(long TgID)
+
+
+        private static string getMoney(long TgID)
         {
-            string cur = repository.MoneyUsers.Where(ti => ti.TgId == TgID).FirstOrDefault().Currencies;
-            JObject curObj = JObject.Parse(cur);
-            Console.WriteLine(curObj["USD"]);
-            message = "";
+            StringBuilder sB = new StringBuilder();
             HttpWebRequest request = (HttpWebRequest)WebRequest.Create(" https://api.privatbank.ua/p24api/pubinfo?exchange&json&coursid=11");
             using (var resp = (HttpWebResponse)request.GetResponse())
             {
@@ -45,118 +52,92 @@ namespace TeleBot
                     JArray jresp = JArray.Parse(objText);
                     foreach (var item in jresp)
                     {
-                        Console.WriteLine(item["ccy"]);
-                        if ((bool)curObj[item["ccy"].ToString()])
-                            message += item["ccy"].ToString() + " BUY:" + Math.Round(Convert.ToDouble(item["buy"]), 2) + "\t\t\t SALE:" + Math.Round(Convert.ToDouble(item["sale"]), 2) + "\n";
+                        sB.Append(item["ccy"].ToString() + " BUY:" + Math.Round(Convert.ToDouble(item["buy"]), 2) + "\t\t\t SALE:" + Math.Round(Convert.ToDouble(item["sale"]), 2) + "\n");
                     }
-                    Console.WriteLine(message);
                 }
             }
+            return sB.ToString();
         }
         private static void getMsg(object sender, MessageEventArgs e)
         {
-            long tgid = -1;
-            //repository.InsertUser(new MoneyUser() { Currencies = "test", TgId = e.Message.Chat.Id, Seed = 100000 });
-            if(repository.MoneyUsers.Count>0)
-            tgid = repository.MoneyUsers.Where(ti => ti.TgId == e.Message.Chat.Id).FirstOrDefault().TgId;
-            string cur = repository.MoneyUsers.Where(ti => ti.TgId == e.Message.Chat.Id).FirstOrDefault().Currencies;
-            JObject curObj = JObject.Parse(cur);
-            if (e.Message.Type != Telegram.Bot.Types.Enums.MessageType.Text)
-                return;
-            if (e.Message.Text.Contains("/seed"))
+            Repository rep = new Repository();
+            if (e.Message.Type == Telegram.Bot.Types.Enums.MessageType.Text)
             {
-                repository.SaveSeed(Convert.ToInt32(e.Message.Text.Split(' ')[1]), e.Message.Chat.Id);
-                client.SendTextMessageAsync(e.Message.Chat.Id, "Seed changed");
+                Console.WriteLine("Message from " + e.Message.Chat.FirstName + ":" + e.Message.Text);
+
+                //___________________________________
+
+                if (e.Message.Text.Contains("/seed"))
+                {
+                    int seed = -1;
+                    int.TryParse(e.Message.Text.Split(' ')[1], out seed);
+                    if (seed != -1)
+                    {
+                        rep.SaveSeed(seed, e.Message.Chat.Id);
+                    }
+                }
+
+                switch (e.Message.Text)
+                {
+                    case "/start":
+                        {
+                            IDs.Add(e.Message.Chat.Id);
+
+                            break;
+                        }
+                    case "/reg":
+                        {
+                            if (rep.MoneyUsers.Where(s => s.TgId == e.Message.Chat.Id).ToList().Count == 0)
+                            {
+                                rep.InsertUser(new MoneyUser() { TgId = e.Message.Chat.Id, Currencies = "{[ 'USD': true, 'EUR': true:, 'RUR': false, 'BTC': true]}", Seed = 1, LastUpdate = DateTime.Now });
+                            }
+                            break;
+                        }
+                    case "/options":
+                        {
+                            ReplyKeyboardMarkup markup = new ReplyKeyboardMarkup(new KeyboardButton[] {
+                                new KeyboardButton("USD"),
+                                new KeyboardButton("EUR"),
+                                new KeyboardButton("RUR"),
+                                new KeyboardButton("BTC"),
+
+                            });
+                            client.SendTextMessageAsync(e.Message.Chat.Id, "Choose currency", replyMarkup: markup);
+                            break;
+                        }
+                    case "USD":
+                        {
+                            string objTxt = rep.MoneyUsers.Where(t => t.TgId == e.Message.Chat.Id).FirstOrDefault().Currencies;
+                            JArray array = JArray.Parse(objTxt);
+                            
+                            Console.WriteLine(array["USD"]);
+                            break;
+                        }
+                }
+
             }
-            Console.WriteLine(e.Message.Text);
-            switch (e.Message.Text.ToLower())
-            {
-                case "/reg":
-                    
-                    repository.InsertUser(new MoneyUser() { TgId = e.Message.Chat.Id, Seed = 100000 ,Currencies = "{'USD': true,'EUR': true,'RUR': false,'BTC': true}"});
-                    client.SendTextMessageAsync(e.Message.Chat.Id, "Registered user");
-                    break;
-                case "money":
-                    if(tgid != -1)
-                    {
-                        getMoney(e.Message.Chat.Id);
-                        client.SendTextMessageAsync(e.Message.Chat.Id, message);
-
-                    }
-                    else
-                    {
-                        client.SendTextMessageAsync(e.Message.Chat.Id, "Not registered user,type /reg to register");
-
-                    }
-                    break;
-                case "usd":
-                    
-                    if ((bool)curObj["USD"])
-                    {
-                        curObj["USD"] = false;
-                        client.SendTextMessageAsync(e.Message.Chat.Id, "USD Removed from your currency list");
-                    }
-                    else
-                    {
-                        curObj["USD"] = true;
-                        client.SendTextMessageAsync(e.Message.Chat.Id, "USD added from your currency list");
-                    }
-                    repository.SaveCurrency(curObj.ToString(), e.Message.Chat.Id);
-                    break;
-                case "eur":
-                    if ((bool)curObj["EUR"])
-                    {
-                        curObj["EUR"] = false;
-                        client.SendTextMessageAsync(e.Message.Chat.Id, "EUR Removed from your currency list");
-                    }
-                    else
-                    {
-                        curObj["EUR"] = true;
-                        client.SendTextMessageAsync(e.Message.Chat.Id, "EUR added from your currency list");
-                    }
-                    repository.SaveCurrency(curObj.ToString(), e.Message.Chat.Id);
-                    break;
-                case "rur":
-                    if ((bool)curObj["RUR"])
-                    {
-                        curObj["RUR"] = false;
-                        client.SendTextMessageAsync(e.Message.Chat.Id, "RUR Removed from your currency list");
-                    }
-                    else
-                    {
-                        curObj["RUR"] = true;
-                        client.SendTextMessageAsync(e.Message.Chat.Id, "RUR added from your currency list");
-                    }
-                    repository.SaveCurrency(curObj.ToString(), e.Message.Chat.Id);
-                    break;
-                case "btc":
-                    if ((bool)curObj["BTC"])
-                    {
-                        curObj["BTC"] = false;
-                        client.SendTextMessageAsync(e.Message.Chat.Id, "BTC Removed from your currency list");
-                    }
-                    else
-                    {
-                        curObj["BTC"] = true;
-                        client.SendTextMessageAsync(e.Message.Chat.Id, "BTC added from your currency list");
-                    }
-                    repository.SaveCurrency(curObj.ToString(), e.Message.Chat.Id);
-                    break;
-                case "options":
-                    var markup = new ReplyKeyboardMarkup(new[]
-                    {
-                        new KeyboardButton("USD"),
-                        new KeyboardButton("EUR"),
-                        new KeyboardButton("RUR"),
-                        new KeyboardButton("BTC")
-                    });
-                    markup.OneTimeKeyboard = true;
-                    client.SendTextMessageAsync(e.Message.Chat.Id, "ON/OFF CURRENCY IN MSG", replyMarkup: markup);
-                    break;
-                default:
-                    break;
-            }
-
         }
+        public async static void TickFunc(object state)
+        {
+            Repository rep = new Repository();
+            
+            List<MoneyUser> users = rep.MoneyUsers.OrderBy(x => x.LastUpdate).ToList();
+            foreach (var user in users)
+            {
+                if (user.LastUpdate.Minute == DateTime.Now.Minute || user.LastUpdate < DateTime.Now)
+                {
+                    try
+                    {
+                        await client.SendTextMessageAsync(user.TgId, getMoney(user.TgId));
+                    }
+                    catch (Exception ex)
+                    {
+
+                    }
+                    rep.SaveDate(user.TgId, DateTime.Now.AddMinutes(user.Seed));
+                }
+            }
+        }
+
     }
 }

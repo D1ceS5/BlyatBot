@@ -8,32 +8,42 @@ using System.Threading.Tasks;
 
 namespace BlyadskiyBot
 {
-    class TgContext:DbContext
+    class TgContext : DbContext
     {
         public DbSet<MoneyUser> MoneyUsers { get; set; }
     }
-    class Repository
+    public  class Repository
     {
-        static TgContext context = new TgContext();
-        public List<MoneyUser> MoneyUsers { get { return context.MoneyUsers.ToList(); } }
+        object locker = new object();
+         TgContext context = new TgContext();
+        public  List<MoneyUser> MoneyUsers { get  { return context.MoneyUsers.ToList();  } }
 
-        public void InsertUser(MoneyUser user)
+        public  void InsertUser(MoneyUser user)
         {
             context.MoneyUsers.Add(user);
-            context.SaveChanges();
+            context.SaveChangesAsync();
         }
-        public void SaveCurrency(string cur,long tgid)
+        public  void SaveCurrency(string cur, long tgid)
         {
             context.MoneyUsers.Where(tg => tg.TgId == tgid).FirstOrDefault().Currencies = cur;
-            context.SaveChanges();
+            context.SaveChangesAsync();
         }
-        public void SaveSeed(int seed, long tgid)
+        public  void SaveSeed(int seed, long tgid)
         {
             context.MoneyUsers.Where(tg => tg.TgId == tgid).FirstOrDefault().Seed = seed;
-            context.SaveChanges();
+            context.SaveChangesAsync();
+        }
+        public async void SaveDate(long tgid, DateTime time)
+        {
+            object o = new object();
+            lock (o)
+            {
+                context.MoneyUsers.Where(tg => tg.TgId == tgid).FirstOrDefault().LastUpdate = time;
+            }
+            await context.SaveChangesAsync();
         }
     }
-    class MoneyUser
+    public class MoneyUser
     {
         public int MoneyUserId { get; set; }
         public long TgId { get; set; }
@@ -41,5 +51,7 @@ namespace BlyadskiyBot
         public int Seed { get; set; }
 
         public string Currencies { get; set; }
+
+        public DateTime LastUpdate { get; set; }
     }
 }
