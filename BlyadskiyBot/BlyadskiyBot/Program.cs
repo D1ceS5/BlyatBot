@@ -39,9 +39,12 @@ namespace TeleBot
         }
 
 
-        private static string getMoney(long TgID)
+        private static string getMoney(MoneyUser user)
         {
             StringBuilder sB = new StringBuilder();
+
+            JObject currencies = JObject.Parse(user.Currencies);
+
             HttpWebRequest request = (HttpWebRequest)WebRequest.Create(" https://api.privatbank.ua/p24api/pubinfo?exchange&json&coursid=11");
             using (var resp = (HttpWebResponse)request.GetResponse())
             {
@@ -52,6 +55,7 @@ namespace TeleBot
                     JArray jresp = JArray.Parse(objText);
                     foreach (var item in jresp)
                     {
+                        if ((bool)currencies[item["ccy"]])
                         sB.Append(item["ccy"].ToString() + " BUY:" + Math.Round(Convert.ToDouble(item["buy"]), 2) + "\t\t\t SALE:" + Math.Round(Convert.ToDouble(item["sale"]), 2) + "\n");
                     }
                 }
@@ -89,7 +93,7 @@ namespace TeleBot
                         {
                             if (rep.MoneyUsers.Where(s => s.TgId == e.Message.Chat.Id).ToList().Count == 0)
                             {
-                                rep.InsertUser(new MoneyUser() { TgId = e.Message.Chat.Id, Currencies = "{[ 'USD': true, 'EUR': true:, 'RUR': false, 'BTC': true]}", Seed = 1, LastUpdate = DateTime.Now });
+                                rep.InsertUser(new MoneyUser() { TgId = e.Message.Chat.Id, Currencies = "[ 'USD': true, 'EUR': true:, 'RUR': false, 'BTC': true]", Seed = 1, LastUpdate = DateTime.Now });
                             }
                             break;
                         }
@@ -108,9 +112,61 @@ namespace TeleBot
                     case "USD":
                         {
                             string objTxt = rep.MoneyUsers.Where(t => t.TgId == e.Message.Chat.Id).FirstOrDefault().Currencies;
-                            JArray array = JArray.Parse(objTxt);
-                            
-                            Console.WriteLine(array["USD"]);
+                            JObject array = JObject.Parse(objTxt);
+                            if ((bool)array["USD"])
+                            {
+                                array["USD"] = false;
+                            }
+                            else
+                            {
+                                array["USD"] = true;
+                            }
+                            rep.SaveCurrency(array.ToString(), e.Message.Chat.Id);
+                            break;
+                        }
+                    case "EUR":
+                        {
+                            string objTxt = rep.MoneyUsers.Where(t => t.TgId == e.Message.Chat.Id).FirstOrDefault().Currencies;
+                            JObject array = JObject.Parse(objTxt);
+                            if ((bool)array["EUR"])
+                            {
+                                array["EUR"] = false;
+                            }
+                            else
+                            {
+                                array["EUR"] = true;
+                            }
+                            rep.SaveCurrency(array.ToString(), e.Message.Chat.Id);
+                            break;
+                        }
+                    case "RUR":
+                        {
+                            string objTxt = rep.MoneyUsers.Where(t => t.TgId == e.Message.Chat.Id).FirstOrDefault().Currencies;
+                            JObject array = JObject.Parse(objTxt);
+                            if ((bool)array["RUR"])
+                            {
+                                array["RUR"] = false;
+                            }
+                            else
+                            {
+                                array["RUR"] = true;
+                            }
+                            rep.SaveCurrency(array.ToString(), e.Message.Chat.Id);
+                            break;
+                        }
+                    case "BTC":
+                        {
+                            string objTxt = rep.MoneyUsers.Where(t => t.TgId == e.Message.Chat.Id).FirstOrDefault().Currencies;
+                            JObject array = JObject.Parse(objTxt);
+                            if ((bool)array["BTC"])
+                            {
+                                array["BTC"] = false;
+                            }
+                            else
+                            {
+                                array["BTC"] = true;
+                            }
+                            rep.SaveCurrency(array.ToString(), e.Message.Chat.Id);
                             break;
                         }
                 }
@@ -128,7 +184,8 @@ namespace TeleBot
                 {
                     try
                     {
-                        await client.SendTextMessageAsync(user.TgId, getMoney(user.TgId));
+                        Console.WriteLine("Sended to " + user.TgId + ":" + getMoney(user));
+                        await client.SendTextMessageAsync(user.TgId, getMoney(user));
                     }
                     catch (Exception ex)
                     {
